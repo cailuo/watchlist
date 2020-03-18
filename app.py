@@ -1,8 +1,10 @@
-from flask import Flask, url_for, render_template
+from flask import Flask, url_for, render_template, request, redirect, flash
 from flask_sqlalchemy import SQLAlchemy
 import os, sys
 
 app = Flask(__name__)
+# 设置签名所需的密钥
+app.config['SECRET_KEY'] = 'dev'   # 等同于 app.secret_key = 'dev'
 
 WIN = sys.platform.startswith('win')
 if WIN:
@@ -51,10 +53,8 @@ def hello():
 #     print(url_for('test_url_for', num=2))
 #     return 'Test page'
 
-name = 'cailuo'
 
-
-# 向数据库添加虚拟数据
+# 向数据库添加数据
 @app.cli.command()
 def forge():
     db.create_all()
@@ -80,11 +80,25 @@ def forge():
     click.echo('Done.')
 
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
+    if request.method == 'POST':
+        title = request.form.get('title')   # 表单字段的name值
+        year = request.form.get('year')     # 表单字段的name值
+        if not title or not year or len(year) > 4 or len(title) > 60:
+            # get_flashed_messages()函数用来在模板中获取提示信息
+            flash('Invalid input.')      # 显示错误提示
+            return redirect(url_for('index'))       # 重定向回主页
+        movie = Movie(title=title, year=year)
+        db.session.add(movie)
+        db.session.commit()
+        flash('Item created')   # 显示创建成功的提示
+        return redirect(url_for('index'))
+
     # user = User.query.first()
     movies = Movie.query.all()
     return render_template('index.html', movies=movies)
+
 
 @app.errorhandler(404)
 def page_not_found(e):
@@ -103,5 +117,42 @@ def inject_user():
 @app.route('/base')
 def base():
     return render_template('base.html')
+
+@app.route('/form')
+def form():
+    return render_template('form.html')
+
+# 编辑电影条目
+@app.route('/movie/edit/<int:movie_id>', methods=['GET', 'POST'])
+def edit(movie_id):
+    # get_or_404: 会返回对应主键的记录(返回的是记录)，如果没有找到，则返回404错误响应
+    movie = Movie.query.get_or_404(movie_id)
+    if request.method == 'POST':
+        title = request.form['title']
+        year = request.form['year']
+
+        if not title or not year or len(year) > 4 or len(title) > 60:
+            flash('Invalid input.')
+            return redirect(url_for('edit', movie_id=movie_id))
+
+        movie.title = title
+        movie.year = year
+        db.session.commit()
+        flash('Item updated')
+        return redirect(url_for('index'))
+
+    return render_template('edit.html', movie=movie)
+
+
+# 删除条目
+@app.route('/movie/delete/<int:movie_id>', methods=['POST'])
+def delete(movie_id):
+    movie = Movie.query.get_or_404(movie_id)
+    db.session.delete(movie)
+    db.session.commit()
+    flash('Item deleted')
+    return redirect(url_for('index'))
+
+
 
 
