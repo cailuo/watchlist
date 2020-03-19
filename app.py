@@ -1,8 +1,17 @@
 from flask import Flask, url_for, render_template, request, redirect, flash
 from flask_sqlalchemy import SQLAlchemy
 import os, sys
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import UserMixin
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
+
 
 app = Flask(__name__)
+login_manager = LoginManager(app)   # 实例化 扩展类
+# login表示视图函数名
+login_manager.login_view = 'login'  # 为了让重定向操作正确执行（未登录状态访问需要登录的页面时会跳转到login页面）
+login_manager.login_message = 'please login'  # 自定义错误提示消息
+
 # 设置签名所需的密钥
 app.config['SECRET_KEY'] = 'dev'   # 等同于 app.secret_key = 'dev'
 
@@ -17,9 +26,17 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # 关闭对模型修改的
 db = SQLAlchemy(app) # 初始化扩展，传入程序实例app
 
 # 创建两个模型类来表示两张数据表
-class User(db.Model):  # 表名将会是 user（自动生成，小写处理）
+class User(db.Model, UserMixin):  # 表名将会是 user（自动生成，小写处理）
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(20))
+    username = db.Column(db.String(20))
+    password_hash = db.Column(db.String(128))
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def validate_password(self, password):
+        return check_password_hash(self.password_hash, password)    #返回布尔值
 
 class Movie(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -83,6 +100,8 @@ def forge():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
+        if not current_user.is_authenticated: # 如果当前用户未认证
+            return redirect(url_for('index'))
         title = request.form.get('title')   # 表单字段的name值
         year = request.form.get('year')     # 表单字段的name值
         if not title or not year or len(year) > 4 or len(title) > 60:
@@ -124,6 +143,7 @@ def form():
 
 # 编辑电影条目
 @app.route('/movie/edit/<int:movie_id>', methods=['GET', 'POST'])
+@login_required
 def edit(movie_id):
     # get_or_404: 会返回对应主键的记录(返回的是记录)，如果没有找到，则返回404错误响应
     movie = Movie.query.get_or_404(movie_id)
@@ -146,12 +166,97 @@ def edit(movie_id):
 
 # 删除条目
 @app.route('/movie/delete/<int:movie_id>', methods=['POST'])
+@login_required
 def delete(movie_id):
     movie = Movie.query.get_or_404(movie_id)
     db.session.delete(movie)
     db.session.commit()
     flash('Item deleted')
     return redirect(url_for('index'))
+
+
+# 创建管理员
+@app.cli.command()
+@click.option('--username', prompt=True, help='The username used to login.')
+@click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True, help='The password used to login.')
+def admin(username, password):
+    db.create_all()
+    user = User.query.first()
+    if user is not None:
+        click.echo('Updating user...')
+        user.name = username
+        user.set_password(password)
+    else:
+        click.echo('Creating user...')
+        user = User(username=username, name='Admin')
+        user.set_password(password)
+        db.session.add(user)
+    db.session.commit()
+    click.echo('Done.')
+
+
+
+@login_manager.user_loader
+def load_user(user_id):    # 创建用户加载回调函数，接受用户ID作为参数
+    user = User.query.get(int(user_id))
+    return user
+
+
+# 显示登录页面和处理登录表单提交请求
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        if not username or not password:
+            flash('Invalid input.')
+            return redirect(url_for('login'))
+
+        user = User.query.first()
+        if username == user.username and user.validate_password(password):
+            login_user(user)
+            flash('Login success')
+            return redirect(url_for('index'))
+
+        flash('Invalid username or password')
+        return redirect(url_for('login'))
+    return render_template('login.html')
+
+# 登出
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Goodbye')
+    return redirect(url_for('index'))
+
+
+# 修改用户名
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    if request.method == 'POST':
+        name = request.form['name']
+
+        if not name or len(name) > 20:
+            flash('Invalid input.')
+            return redirect(url_for('settings'))
+
+        current_user.name = name
+        db.session.commit()
+        flash('Settings updated')
+        return redirect(url_for('idnex'))
+    return render_template('settings.html')
+
+
+
+
+
+
+
+
+
 
 
 
