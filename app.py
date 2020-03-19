@@ -49,7 +49,8 @@ import click
 @click.option('--drop', is_flag=True, help='Create after drop.')
 def initdb(drop):  #默认情况下，函数名称就是命令的名字
     if drop:
-        db.drop_all()
+        db.drop_all()  # 删除表
+        click.echo('Dropped databases.')
     db.create_all()
     click.echo('Initialized database.')
 
@@ -111,7 +112,7 @@ def index():
         movie = Movie(title=title, year=year)
         db.session.add(movie)
         db.session.commit()
-        flash('Item created')   # 显示创建成功的提示
+        flash('Item created.')   # 显示创建成功的提示
         return redirect(url_for('index'))
 
     # user = User.query.first()
@@ -171,7 +172,7 @@ def delete(movie_id):
     movie = Movie.query.get_or_404(movie_id)
     db.session.delete(movie)
     db.session.commit()
-    flash('Item deleted')
+    flash('Item deleted.')
     return redirect(url_for('index'))
 
 
@@ -180,11 +181,11 @@ def delete(movie_id):
 @click.option('--username', prompt=True, help='The username used to login.')
 @click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True, help='The password used to login.')
 def admin(username, password):
-    db.create_all()
+    db.create_all()  # 根据模型类生成表
     user = User.query.first()
     if user is not None:
         click.echo('Updating user...')
-        user.name = username
+        user.username = username
         user.set_password(password)
     else:
         click.echo('Creating user...')
@@ -216,10 +217,10 @@ def login():
         user = User.query.first()
         if username == user.username and user.validate_password(password):
             login_user(user)
-            flash('Login success')
+            flash('Login success.')
             return redirect(url_for('index'))
 
-        flash('Invalid username or password')
+        flash('Invalid username or password.')
         return redirect(url_for('login'))
     return render_template('login.html')
 
@@ -228,7 +229,7 @@ def login():
 @login_required
 def logout():
     logout_user()
-    flash('Goodbye')
+    flash('Goodbye.')
     return redirect(url_for('index'))
 
 
@@ -245,8 +246,8 @@ def settings():
 
         current_user.name = name
         db.session.commit()
-        flash('Settings updated')
-        return redirect(url_for('idnex'))
+        flash('Settings updated.')
+        return redirect(url_for('index'))
     return render_template('settings.html')
 
 
